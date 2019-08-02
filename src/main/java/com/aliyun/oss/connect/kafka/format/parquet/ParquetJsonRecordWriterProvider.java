@@ -21,6 +21,7 @@ package com.aliyun.oss.connect.kafka.format.parquet;
 
 import com.aliyun.oss.connect.kafka.OSSSinkConnectorConfiguration;
 import com.aliyun.oss.connect.kafka.storage.OSSStorage;
+import com.google.protobuf.InvalidProtocolBufferException;
 import com.google.protobuf.Message;
 import com.google.protobuf.util.JsonFormat;
 import io.confluent.connect.storage.common.StorageCommonConfig;
@@ -38,17 +39,14 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.List;
 
-import static com.aliyun.oss.connect.kafka.OSSSinkConnectorConfiguration.OSS_BUCKET;
-import static com.aliyun.oss.connect.kafka.OSSSinkConnectorConfiguration.PARQUET_BLOCK_SIZE;
-import static com.aliyun.oss.connect.kafka.OSSSinkConnectorConfiguration.PARQUET_COMPRESSION_CODEC;
-import static com.aliyun.oss.connect.kafka.OSSSinkConnectorConfiguration.PARQUET_PAGE_SIZE;
-import static com.aliyun.oss.connect.kafka.OSSSinkConnectorConfiguration.PARQUET_PROTOBUF_SCHEMA_CLASS;
+import static com.aliyun.oss.connect.kafka.OSSSinkConnectorConfiguration.*;
 
 public class ParquetJsonRecordWriterProvider implements RecordWriterProvider<OSSSinkConnectorConfiguration> {
-  private static final Logger LOG = LoggerFactory.getLogger(ParquetJsonRecordWriterProvider.class);
+  private static final Logger log = LoggerFactory.getLogger(ParquetJsonRecordWriterProvider.class);
 
   private static final String EXTENSION = ".parquet";
   private final OSSStorage storage;
@@ -72,9 +70,9 @@ public class ParquetJsonRecordWriterProvider implements RecordWriterProvider<OSS
       ParquetWriter<Message> writer = null;
       Message.Builder builder = null;
       final String name = "oss://"
-          + conf.get(OSS_BUCKET)
-          + conf.getString(StorageCommonConfig.DIRECTORY_DELIM_CONFIG)
-          + filename;
+              + conf.get(OSS_BUCKET)
+              + conf.getString(StorageCommonConfig.DIRECTORY_DELIM_CONFIG)
+              + filename;
 
       @Override
       public void write(SinkRecord sinkRecord) {
@@ -95,19 +93,21 @@ public class ParquetJsonRecordWriterProvider implements RecordWriterProvider<OSS
               throw new ConnectException("Can not find protobuf schema class for topic " + topic);
             }
 
-            Class<? extends Message> typeClass = (Class<? extends Message>) Class.forName(schemaClass);
+            Class<? extends Message> typeClass = (Class<? extends Message>) Thread.currentThread().getContextClassLoader().loadClass(schemaClass);
             writer = new ProtoParquetWriter<>(
-                new Path(name),
-                typeClass,
-                CompressionCodecName.valueOf(conf.getString(PARQUET_COMPRESSION_CODEC).toUpperCase()),
-                conf.getInt(PARQUET_BLOCK_SIZE),
-                conf.getInt(PARQUET_PAGE_SIZE));
+                    new Path(name),
+                    typeClass,
+                    CompressionCodecName.valueOf(conf.getString(PARQUET_COMPRESSION_CODEC).toUpperCase()),
+                    conf.getInt(PARQUET_BLOCK_SIZE),
+                    conf.getInt(PARQUET_PAGE_SIZE));
 
             Method getBuilder = typeClass.getDeclaredMethod("newBuilder");
             builder = (Message.Builder) getBuilder.invoke(typeClass);
           }
-        } catch (Exception e) {
+        } catch (IOException e) {
           throw new ConnectException(e);
+        } catch (Exception e) {
+          throw new RuntimeException(e);
         }
 
         Object value = sinkRecord.value();
@@ -116,27 +116,32 @@ public class ParquetJsonRecordWriterProvider implements RecordWriterProvider<OSS
             byte[] rawJson = converter.fromConnectData(sinkRecord.topic(), sinkRecord.valueSchema(), value);
             parser.merge(new String(rawJson), builder);
           } else {
-            parser.merge(value.toString(), builder);
+            String str = String.valueOf(value);
+            parser.merge(str, builder);
           }
           writer.write(builder.build());
           builder.clear();
-        } catch (Exception e) {
-          throw new ConnectException(e);
+        } catch (InvalidProtocolBufferException e) {
+          log.error("[InvalidProtocolBufferException]. ", e);
+        } catch (IOException e) {
+          throw new RuntimeException(e);
         }
       }
 
+      @Override
       public void close() {
         try {
           if (writer != null) {
-            LOG.info("Start to commit file {}", name);
+            log.info("Start to commit file {}", name);
             writer.close();
-            LOG.info("File {} committed", name);
+            log.info("File {} committed", name);
           }
         } catch (IOException e) {
           throw new ConnectException(e);
         }
       }
 
+      @Override
       public void commit() {
         close();
       }
