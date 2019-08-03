@@ -36,12 +36,10 @@ import org.apache.kafka.connect.sink.SinkRecord;
 import org.apache.parquet.hadoop.ParquetWriter;
 import org.apache.parquet.hadoop.metadata.CompressionCodecName;
 import org.apache.parquet.proto.ProtoParquetWriter;
-import org.json.JSONObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.List;
 
@@ -126,7 +124,7 @@ public class ParquetJsonRecordWriterProvider implements RecordWriterProvider<OSS
           writer.write(builder.build());
           builder.clear();
         } catch (InvalidProtocolBufferException e) {
-          log.error("[InvalidProtocolBufferException]. {}", str, e);
+          log.error("[InvalidProtocolBufferException]. {}\n", str, e);
         } catch (IOException e) {
           throw new RuntimeException(e);
         }
