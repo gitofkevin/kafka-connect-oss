@@ -27,6 +27,7 @@ import com.google.protobuf.util.JsonFormat;
 import io.confluent.connect.storage.common.StorageCommonConfig;
 import io.confluent.connect.storage.format.RecordWriter;
 import io.confluent.connect.storage.format.RecordWriterProvider;
+import org.apache.avro.data.Json;
 import org.apache.hadoop.fs.Path;
 import org.apache.kafka.connect.data.Struct;
 import org.apache.kafka.connect.errors.ConnectException;
@@ -35,6 +36,7 @@ import org.apache.kafka.connect.sink.SinkRecord;
 import org.apache.parquet.hadoop.ParquetWriter;
 import org.apache.parquet.hadoop.metadata.CompressionCodecName;
 import org.apache.parquet.proto.ProtoParquetWriter;
+import org.json.JSONObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -117,7 +119,9 @@ public class ParquetJsonRecordWriterProvider implements RecordWriterProvider<OSS
             parser.merge(new String(rawJson), builder);
           } else {
             String str = String.valueOf(value);
-            parser.merge(str, builder);
+            if (isJsonStr(str)) {
+              parser.merge(str, builder);
+            }
           }
           writer.write(builder.build());
           builder.clear();
@@ -146,5 +150,15 @@ public class ParquetJsonRecordWriterProvider implements RecordWriterProvider<OSS
         close();
       }
     };
+  }
+
+  private boolean isJsonStr(String str) {
+    try {
+      Json.parseJson(str);
+      return true;
+    } catch (Exception e) {
+      return false;
+    }
+
   }
 }
