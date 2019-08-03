@@ -113,12 +113,12 @@ public class ParquetJsonRecordWriterProvider implements RecordWriterProvider<OSS
         }
 
         Object value = sinkRecord.value();
+        String str = String.valueOf(value);
         try {
           if (value instanceof Struct) {
             byte[] rawJson = converter.fromConnectData(sinkRecord.topic(), sinkRecord.valueSchema(), value);
             parser.merge(new String(rawJson), builder);
           } else {
-            String str = String.valueOf(value);
             if (isJsonStr(str)) {
               parser.merge(str, builder);
             }
@@ -126,7 +126,7 @@ public class ParquetJsonRecordWriterProvider implements RecordWriterProvider<OSS
           writer.write(builder.build());
           builder.clear();
         } catch (InvalidProtocolBufferException e) {
-          log.error("[InvalidProtocolBufferException]. ", e);
+          log.error("[InvalidProtocolBufferException]. {}", str, e);
         } catch (IOException e) {
           throw new RuntimeException(e);
         }
